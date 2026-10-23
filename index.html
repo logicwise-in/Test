@@ -152,16 +152,73 @@ document.getElementById("applyCoupon").onclick=()=>{
  updateServiceQuote();
 };
 document.getElementById("couponCode").addEventListener("input",()=>{activeCoupon="";document.getElementById("couponStatus").textContent="Apply the code to calculate your discount.";updateServiceQuote()});
-document.getElementById("submitProject").onclick=()=>{
+async function getSignedInUser(){
+ return new Promise(resolve=>{
+  const cached=window.shopwiseFirebaseUser;
+  if(cached){resolve(cached);return}
+  const timer=setTimeout(()=>{window.removeEventListener("shopwise-auth-state",listener);resolve(null)},7000);
+  function listener(e){clearTimeout(timer);window.removeEventListener("shopwise-auth-state",listener);resolve(e.detail&&e.detail.user||null)}
+  window.addEventListener("shopwise-auth-state",listener);
+ });
+}
+async function checkoutApi(user,body){
+ const token=await user.getIdToken();
+ const response=await fetch("/.netlify/functions/checkout",{method:body.action==="admin-orders"?"GET":"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},body:body.action==="admin-orders"?undefined:JSON.stringify(body)});
+ const data=await response.json().catch(()=>({}));
+ if(!response.ok)throw new Error(data.error||"Checkout request failed.");
+ return data;
+}
+document.getElementById("submitProject").onclick=async()=>{
  const projectName=document.getElementById("projectName").value.trim();
  if(!projectName){document.getElementById("projectName").focus();document.getElementById("serviceStatus").textContent="Please enter your business or project name.";return}
- const quote=updateServiceQuote();
- const order={projectName,projectType:document.getElementById("projectType").value,brief:document.getElementById("projectBrief").value.trim(),domain:document.getElementById("projectDomain").value.trim(),features:quote.items.map(i=>i.label),subtotal:quote.subtotal,discountCode:activeCoupon||null,discount:quote.totalDiscount,total:quote.total,createdAt:new Date().toISOString()};
- document.getElementById("serviceStatus").textContent="Quote prepared: "+money(quote.total)+".";
- document.getElementById("paymentPending").style.display="block";
- document.getElementById("paymentPending").textContent="Your quote is ready for "+projectName+" ("+money(quote.total)+"). Real payment is not connected yet. The project details have not been sent to Logic Wise and no payment has been taken. Configure a payment provider and secure order storage before accepting orders.";
- console.log("Shopwise website service quote (not submitted to a server):",order);
+ const user=window.shopwiseFirebaseUser;
+ if(!user){document.getElementById("serviceStatus").textContent="Please sign in with Google first.";return}
+ const quote=updateServiceQuote(),button=document.getElementById("submitProject");
+ button.disabled=true;document.getElementById("serviceStatus").textContent="Creating a secure payment order…";
+ try{
+  const created=await checkoutApi(user,{action:"create-order",projectName,projectType:document.getElementById("projectType").value,brief:document.getElementById("projectBrief").value.trim(),domain:document.getElementById("projectDomain").value.trim(),features:quote.items.map(i=>i.id),discountCode:activeCoupon||""});
+  if(!window.Razorpay){
+   await new Promise((resolve,reject)=>{const script=document.createElement("script");script.src="https://checkout.razorpay.com/v1/checkout.js";script.onload=resolve;script.onerror=()=>reject(new Error("Could not load Razorpay Checkout."));document.head.appendChild(script)});
+  }
+  const rzp=new Razorpay({key:created.keyId,amount:created.amount,currency:created.currency,name:"Logic Wise",description:"Website project: "+projectName,order_id:created.razorpayOrderId,prefill:created.customer,theme:{color:"#1769e0"},
+   handler:async response=>{
+    document.getElementById("serviceStatus").textContent="Payment received by Razorpay; verifying securely…";
+    try{
+     const verified=await checkoutApi(user,{action:"verify-payment",orderId:response.razorpay_order_id,paymentId:response.razorpay_payment_id,signature:response.razorpay_signature});
+     document.getElementById("paymentPending").style.display="block";document.getElementById("paymentPending").textContent=verified.message+" Order reference: "+verified.orderId+". Email notifications will be sent if email delivery is configured.";
+     document.getElementById("serviceStatus").textContent="Payment verified successfully.";
+    }catch(err){document.getElementById("serviceStatus").textContent="Payment was submitted, but verification could not be confirmed automatically. Do not pay again; contact Logic Wise with your Razorpay payment ID. "+err.message}
+   },
+   modal:{ondismiss:()=>{document.getElementById("serviceStatus").textContent="Checkout closed. If you completed a payment, contact us if confirmation doesn't appear."}}
+  });
+  rzp.on("payment.failed",response=>{document.getElementById("serviceStatus").textContent="Payment failed: "+(response.error&&response.error.description||"Please try again.")});
+  rzp.open();
+ }catch(err){document.getElementById("serviceStatus").textContent=err.message;document.getElementById("paymentPending").style.display="block";document.getElementById("paymentPending").textContent="Checkout is not ready until all server credentials and database setup are complete. No payment should be attempted until this message is resolved."}
+ finally{button.disabled=false}
 };
+const adminButton=document.createElement("button");
+adminButton.className="service-submit";adminButton.style.background="#243b5a";adminButton.textContent="Open admin orders dashboard";adminButton.style.marginTop="12px";
+document.querySelector(".service-summary").appendChild(adminButton);
+const adminPanel=document.createElement("div");adminPanel.className="service-panel";adminPanel.hidden=true;adminPanel.innerHTML='<h3>Admin orders</h3><p class="service-muted">Visible only to the email configured as ADMIN_EMAIL.</p><div id="adminOrdersList" class="service-muted"></div>';document.querySelector("#website-services .service-panel").appendChild(adminPanel);
+adminButton.onclick=async()=>{
+ const user=window.shopwiseFirebaseUser;if(!user){document.getElementById("serviceStatus").textContent="Sign in first.";return}
+ adminPanel.hidden=false;document.getElementById("adminOrdersList").textContent="Loading orders…";
+ try{
+  const token=await user.getIdToken();
+  const res=await fetch("/.netlify/functions/checkout",{headers:{Authorization:"Bearer "+token,Accept:"application/json"}});
+  const data=await res.json();if(!res.ok)throw new Error(data.error||"Unable to load orders.");
+  if(!data.orders.length){document.getElementById("adminOrdersList").textContent="No orders yet.";return}
+  const table=document.createElement("div");
+  data.orders.forEach(order=>{
+   const card=document.createElement("div");card.className="summary-line";card.style.flexDirection="column";card.style.alignItems="flex-start";
+   const title=document.createElement("strong");title.textContent=order.project_name+" — ₹"+(Number(order.total_paise)/100).toLocaleString("en-IN")+" · "+order.payment_status;
+   const detail=document.createElement("span");detail.textContent=order.customer_name+" ("+order.customer_email+") · "+order.project_type+" · "+new Date(order.created_at).toLocaleString();
+   card.append(title,detail);table.appendChild(card);
+  });
+  const list=document.getElementById("adminOrdersList");list.replaceChildren(table);
+ }catch(err){document.getElementById("adminOrdersList").textContent=err.message}
+};
+
 window.addEventListener("shopwise-auth-state",event=>{
  const user=event.detail&&event.detail.user;
  document.getElementById("serviceGate").hidden=!!user;
