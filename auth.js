@@ -1,5 +1,4 @@
 // Shopwise Google sign-in using Firebase Authentication.
-// Replace the placeholder values below with your Firebase Web App config.
 // Firebase web config is public; secure your project with authorized domains and proper Firebase rules.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import {
@@ -11,10 +10,13 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 
 const firebaseConfig = {
-  apiKey: "YOUR_FIREBASE_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  appId: "YOUR_FIREBASE_APP_ID"
+  apiKey: "AIzaSyCdMkfK2rcMd7d0LMGGdAye06FisuhMZMA",
+  authDomain: "logicwise-acdda.firebaseapp.com",
+  projectId: "logicwise-acdda",
+  storageBucket: "logicwise-acdda.firebasestorage.app",
+  messagingSenderId: "457698966679",
+  appId: "1:457698966679:web:f1970cb50c948da5c17dd2",
+  measurementId: "G-1PJKQSCS3G"
 };
 
 const modal = document.getElementById("authModal");
