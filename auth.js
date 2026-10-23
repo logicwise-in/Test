@@ -78,8 +78,9 @@ if (!isConfigured) {
     });
 
     onAuthStateChanged(auth, user => {
+      window.shopwiseFirebaseUser = user || null;
       window.dispatchEvent(new CustomEvent("shopwise-auth-state", {
-        detail: { user: user ? { uid: user.uid, email: user.email, displayName: user.displayName } : null }
+        detail: { user: user || null }
       }));
       if (user) {
         const displayName = user.displayName || user.email || "My account";
