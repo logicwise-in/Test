@@ -78,6 +78,9 @@ if (!isConfigured) {
     });
 
     onAuthStateChanged(auth, user => {
+      window.dispatchEvent(new CustomEvent("shopwise-auth-state", {
+        detail: { user: user ? { uid: user.uid, email: user.email, displayName: user.displayName } : null }
+      }));
       if (user) {
         const displayName = user.displayName || user.email || "My account";
         accountButton.textContent = "♙ " + displayName;
