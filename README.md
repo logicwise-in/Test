@@ -32,3 +32,37 @@ The current assistant is a **rule-based front-end demo**. It is not connected to
 4. After the deployment finishes, GitHub will show the published site URL in the Pages section.
 
 This is a demo storefront and is not affiliated with Flipkart or any other retailer.
+
+## Website-service checkout (setup required before taking real payments)
+
+The service configurator uses a Netlify Function at `/.netlify/functions/checkout`, Firebase ID-token verification, Razorpay Orders API, a Netlify Postgres migration, and optional transactional email through Resend. The browser never receives the Razorpay secret. Prices and coupon validity are recalculated server-side.
+
+### Required deployment configuration
+
+In Netlify → **Project configuration → Environment variables**, add these variables for the **Functions** scope, then trigger a production deploy:
+
+- `FIREBASE_SERVICE_ACCOUNT_JSON`: the complete JSON contents of a Firebase service account credential for the same project used by `auth.js`. Create/download it from Firebase Console → Project settings → Service accounts. Store only in Netlify secrets; never commit it or send it in chat.
+- `RAZORPAY_KEY_ID`: Razorpay API key ID from the Razorpay Dashboard.
+- `RAZORPAY_KEY_SECRET`: matching Razorpay API key secret. Keep private.
+- `ADMIN_EMAIL`: the exact Google sign-in email allowed to view the admin order list.
+- `RESEND_API_KEY`: optional until email notifications are configured; create an API key in Resend.
+- `ORDER_FROM_EMAIL`: optional until email notifications are configured; a sender address verified in Resend.
+
+Use Razorpay **Test Mode** keys first. Keep live keys out of GitHub and only switch to live mode after test payments and verification have passed. If Firebase service-account JSON plus other environment variables exceed Netlify's environment variable limits, use a secret manager/runtime secret storage option instead of putting private credentials in source control.
+
+### Database and email
+
+The migration in `netlify/database/migrations/` creates the persistent `service_orders` table. The deploy needs Netlify Database support enabled for this site/plan. If the deploy reports that the database feature is unavailable, enable/provision a supported database before testing checkout. The backend saves an order before opening Razorpay Checkout and only marks it paid after validating the Razorpay signature.
+
+Email delivery requires a verified sender domain/address and a valid Resend API key. When email settings are absent, orders can still be recorded and verified, but email notifications are skipped. The admin list is available from the website-service configurator and is server-authorized against `ADMIN_EMAIL`.
+
+### Before launch
+
+- Add `logicwise.in` (and `www.logicwise.in` if used) to Firebase Authentication → Settings → Authorized domains.
+- Enable Google under Firebase Authentication → Sign-in providers.
+- Confirm `ADMIN_EMAIL` matches the Google account used for the admin dashboard.
+- Test a complete order with Razorpay Test Mode, verify order persistence and email delivery, and inspect Netlify Function logs.
+- Configure Razorpay webhooks for resilience against users closing the browser after payment; client callback verification is implemented, but webhook reconciliation is a recommended production hardening step.
+- Publish clear service scope, delivery timelines, refund/cancellation terms, privacy notice, and contact details before accepting real customer payments.
+
+**Current state:** backend code and configuration instructions are committed, but checkout is not considered production-ready until the Netlify environment variables and database are configured and a full test payment is verified.
